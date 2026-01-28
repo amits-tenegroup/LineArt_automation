@@ -170,15 +170,16 @@ export async function POST(request: NextRequest) {
       ctx.textAlign = 'center';
       ctx.fillStyle = scaledConfig.titleColor;
 
-      // Draw title
+      // Draw title (in uppercase)
       if (title) {
-        console.log('Drawing title:', title);
+        const titleUpper = title.toUpperCase();
+        console.log('Drawing title:', titleUpper);
         ctx.font = `bold ${scaledConfig.titleFontSize}px "Georgia Pro"`;
         ctx.letterSpacing = `${scaledConfig.titleLetterSpacing}px`;
         console.log('Font set to:', ctx.font, 'Letter spacing:', ctx.letterSpacing);
         
         // Draw the text centered with built-in letter spacing
-        ctx.fillText(title, canvasWidth / 2, scaledConfig.titleTop);
+        ctx.fillText(titleUpper, canvasWidth / 2, scaledConfig.titleTop);
       }
 
       // Draw date
