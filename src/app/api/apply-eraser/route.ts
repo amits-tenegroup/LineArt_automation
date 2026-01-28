@@ -69,11 +69,18 @@ export async function POST(request: NextRequest) {
     // The line art is scaled to fit lineArtHeight, width is proportional
     const actualLineArtAspect = originalWidth / originalHeight;
     const actualLineArtWidth = lineArtHeight * actualLineArtAspect;
-    const actualLineArtLeft = (canvasWidth - actualLineArtWidth) / 2;
+    
+    // Calculate the offset between assumed width (3:4) and actual width
+    // Frontend assumes 3:4 ratio, but actual ratio might differ
+    const assumedWidth = lineArtWidth; // What frontend calculated (height * 3/4)
+    const widthDifference = assumedWidth - actualLineArtWidth;
+    
+    // Adjust the left position to account for the width difference (centered adjustment)
+    const actualLineArtLeft = lineArtLeft + (widthDifference / 2);
     
     console.log('Actual line art aspect:', actualLineArtAspect);
-    console.log('Actual line art width:', actualLineArtWidth, '(vs passed:', lineArtWidth, ')');
-    console.log('Actual line art left:', actualLineArtLeft, '(vs passed:', lineArtLeft, ')');
+    console.log('Assumed width:', assumedWidth, 'Actual width:', actualLineArtWidth, 'Diff:', widthDifference);
+    console.log('Passed lineArtLeft:', lineArtLeft, 'Adjusted actualLineArtLeft:', actualLineArtLeft);
 
     // Calculate the scale from canvas space to line art original space
     const scaleX = originalWidth / actualLineArtWidth;

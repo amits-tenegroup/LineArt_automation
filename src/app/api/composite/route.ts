@@ -28,7 +28,7 @@ if (fs.existsSync(fontPath)) {
 export async function POST(request: NextRequest) {
   console.log('=== COMPOSITE API CALLED ===');
   try {
-    const { lineArtImage, config, title, date } = await request.json();
+    const { lineArtImage, config, title, date, preview } = await request.json();
 
     if (!lineArtImage) {
       return NextResponse.json(
@@ -39,9 +39,26 @@ export async function POST(request: NextRequest) {
 
     const typedConfig = config as CompositeConfig;
 
-    // Canvas dimensions (18" x 24" at 300 DPI)
-    const canvasWidth = 5400;
-    const canvasHeight = 7200;
+    // Scale factor: 0.5 for preview (2x smaller), 1 for full resolution
+    const scale = preview ? 0.5 : 1;
+
+    // Canvas dimensions (18" x 24" at 300 DPI, scaled for preview)
+    const canvasWidth = Math.round(5400 * scale);
+    const canvasHeight = Math.round(7200 * scale);
+
+    // Scale all config values for preview
+    const scaledConfig = {
+      ...typedConfig,
+      lineArtCenterX: Math.round(typedConfig.lineArtCenterX * scale),
+      lineArtCenterY: Math.round(typedConfig.lineArtCenterY * scale),
+      lineArtScale: Math.round(typedConfig.lineArtScale * scale),
+      titleFontSize: Math.round(typedConfig.titleFontSize * scale),
+      titleTop: Math.round(typedConfig.titleTop * scale),
+      titleLetterSpacing: Math.round(typedConfig.titleLetterSpacing * scale),
+      dateFontSize: Math.round(typedConfig.dateFontSize * scale),
+      dateTop: Math.round(typedConfig.dateTop * scale),
+      dateLetterSpacing: Math.round(typedConfig.dateLetterSpacing * scale),
+    };
 
     // Load background image
     const backgroundPath = path.join(
@@ -70,20 +87,74 @@ export async function POST(request: NextRequest) {
 
     // Calculate width and height maintaining 3:4 aspect ratio (matching AI output)
     // Scale represents the height, width is 3/4 of height
-    const lineArtHeight = typedConfig.lineArtScale;
+    const lineArtHeight = scaledConfig.lineArtScale;
     const lineArtWidth = Math.round(lineArtHeight * (3 / 4));
 
-    // Resize line art - the multiply blend mode will handle white backgrounds naturally
-    const processedLineArt = await sharp(lineArtBuffer)
+    // Calculate top-left position from center point
+    const lineArtTop = Math.round(scaledConfig.lineArtCenterY - (lineArtHeight / 2));
+    const lineArtLeft = Math.round(scaledConfig.lineArtCenterX - (lineArtWidth / 2));
+
+    // Resize line art to the desired scale
+    const resizedLineArt = await sharp(lineArtBuffer)
       .resize(lineArtWidth, lineArtHeight, {
         fit: 'contain',
         background: { r: 255, g: 255, b: 255, alpha: 0 },
       })
       .toBuffer();
 
-    // Calculate top-left position from center point
-    const lineArtTop = Math.round(typedConfig.lineArtCenterY - (lineArtHeight / 2));
-    const lineArtLeft = Math.round(typedConfig.lineArtCenterX - (lineArtWidth / 2));
+    // Calculate the visible portion of the line art within the canvas
+    const cropLeft = Math.max(0, -lineArtLeft);
+    const cropTop = Math.max(0, -lineArtTop);
+    const visibleLeft = Math.max(0, lineArtLeft);
+    const visibleTop = Math.max(0, lineArtTop);
+    const visibleWidth = Math.min(lineArtWidth - cropLeft, canvasWidth - visibleLeft);
+    const visibleHeight = Math.min(lineArtHeight - cropTop, canvasHeight - visibleTop);
+
+    // Only process if there's something visible
+    let processedLineArt: Buffer;
+    if (visibleWidth > 0 && visibleHeight > 0) {
+      // Extract the visible portion of the line art
+      const croppedLineArt = await sharp(resizedLineArt)
+        .extract({
+          left: cropLeft,
+          top: cropTop,
+          width: visibleWidth,
+          height: visibleHeight,
+        })
+        .toBuffer();
+
+      // Create a canvas-sized white layer and composite the cropped line art
+      processedLineArt = await sharp({
+        create: {
+          width: canvasWidth,
+          height: canvasHeight,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 0 },
+        },
+      })
+        .composite([
+          {
+            input: croppedLineArt,
+            top: visibleTop,
+            left: visibleLeft,
+            blend: 'over',
+          },
+        ])
+        .png()
+        .toBuffer();
+    } else {
+      // No visible line art, create empty transparent layer
+      processedLineArt = await sharp({
+        create: {
+          width: canvasWidth,
+          height: canvasHeight,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 0 },
+        },
+      })
+        .png()
+        .toBuffer();
+    }
 
     // Create text overlay using canvas with custom font
     let textOverlay: Buffer | null = null;
@@ -97,26 +168,26 @@ export async function POST(request: NextRequest) {
 
       // Set text properties
       ctx.textAlign = 'center';
-      ctx.fillStyle = typedConfig.titleColor;
+      ctx.fillStyle = scaledConfig.titleColor;
 
       // Draw title
       if (title) {
         console.log('Drawing title:', title);
-        ctx.font = `bold ${typedConfig.titleFontSize}px "Georgia Pro"`;
-        ctx.letterSpacing = `${typedConfig.titleLetterSpacing}px`; // Use config value
+        ctx.font = `bold ${scaledConfig.titleFontSize}px "Georgia Pro"`;
+        ctx.letterSpacing = `${scaledConfig.titleLetterSpacing}px`;
         console.log('Font set to:', ctx.font, 'Letter spacing:', ctx.letterSpacing);
         
         // Draw the text centered with built-in letter spacing
-        ctx.fillText(title, canvasWidth / 2, typedConfig.titleTop);
+        ctx.fillText(title, canvasWidth / 2, scaledConfig.titleTop);
       }
 
       // Draw date
       if (date) {
-        ctx.font = `${typedConfig.dateFontSize}px "Georgia Pro"`;
-        ctx.letterSpacing = `${typedConfig.dateLetterSpacing}px`; // Use config value
+        ctx.font = `${scaledConfig.dateFontSize}px "Georgia Pro"`;
+        ctx.letterSpacing = `${scaledConfig.dateLetterSpacing}px`;
         
         // Draw the text centered with built-in letter spacing
-        ctx.fillText(date, canvasWidth / 2, typedConfig.dateTop);
+        ctx.fillText(date, canvasWidth / 2, scaledConfig.dateTop);
       }
 
       textOverlay = canvas.toBuffer('image/png');
@@ -126,8 +197,8 @@ export async function POST(request: NextRequest) {
     const compositeOperations: any[] = [
       {
         input: processedLineArt,
-        top: lineArtTop,
-        left: lineArtLeft,
+        top: 0,
+        left: 0,
         blend: 'multiply', // This keeps only the blacks
       },
     ];

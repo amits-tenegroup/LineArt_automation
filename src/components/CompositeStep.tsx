@@ -65,6 +65,12 @@ export default function CompositeStep({
   const [cleanedLineArt, setCleanedLineArt] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
   
+  // Line art position and scale controls
+  const [lineArtCenterX, setLineArtCenterX] = useState(DEFAULT_CONFIG.lineArtCenterX);
+  const [lineArtCenterY, setLineArtCenterY] = useState(DEFAULT_CONFIG.lineArtCenterY);
+  const [lineArtScale, setLineArtScale] = useState(DEFAULT_CONFIG.lineArtScale);
+  const [showPositionControls, setShowPositionControls] = useState(false);
+  
   const hasComposited = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
@@ -72,7 +78,7 @@ export default function CompositeStep({
   const isDrawing = useRef(false);
   const lastPos = useRef<{ x: number; y: number } | null>(null);
 
-  const performComposite = async (lineArt: string) => {
+  const performComposite = async (lineArt: string, preview: boolean = false) => {
     setIsCompositing(true);
     setError('');
 
@@ -80,6 +86,9 @@ export default function CompositeStep({
       const config: CompositeConfig = {
         ...DEFAULT_CONFIG,
         backgroundColor,
+        lineArtCenterX,
+        lineArtCenterY,
+        lineArtScale,
       };
 
       const response = await fetch('/api/composite', {
@@ -92,6 +101,7 @@ export default function CompositeStep({
           config,
           title,
           date,
+          preview, // Use lower resolution for preview
         }),
       });
 
@@ -113,8 +123,19 @@ export default function CompositeStep({
   useEffect(() => {
     if (hasComposited.current) return;
     hasComposited.current = true;
-    performComposite(lineArtImage);
+    performComposite(lineArtImage, true); // Use preview for initial load too (faster)
   }, [lineArtImage, title, date, backgroundColor]);
+
+  // Auto-update composite when position/scale changes (with debounce)
+  useEffect(() => {
+    if (!hasComposited.current) return; // Don't run until initial composite is done
+
+    const timer = setTimeout(() => {
+      performComposite(cleanedLineArt || lineArtImage, true); // Use preview for slider updates
+    }, 300); // 300ms debounce (faster since preview is lighter)
+
+    return () => clearTimeout(timer);
+  }, [lineArtCenterX, lineArtCenterY, lineArtScale]);
 
   // Initialize canvas when entering eraser mode
   useEffect(() => {
@@ -212,18 +233,17 @@ export default function CompositeStep({
       // Get the actual rendered image dimensions
       const imgRect = imageRef.current.getBoundingClientRect();
 
-      // Calculate line art dimensions and position based on config
-      const config = DEFAULT_CONFIG;
-      const lineArtHeight = config.lineArtScale;
-      const lineArtWidth = Math.round(lineArtHeight * (3 / 4));
-      const lineArtTop = config.lineArtCenterY - (lineArtHeight / 2);
-      const lineArtLeft = config.lineArtCenterX - (lineArtWidth / 2);
+      // Calculate line art dimensions and position based on CURRENT config
+      const currentLineArtHeight = lineArtScale;
+      const currentLineArtWidth = Math.round(currentLineArtHeight * (3 / 4));
+      const currentLineArtTop = lineArtCenterY - (currentLineArtHeight / 2);
+      const currentLineArtLeft = lineArtCenterX - (currentLineArtWidth / 2);
       
       console.log('=== ERASER FRONTEND DEBUG ===');
       console.log('Canvas size:', canvasRef.current.width, 'x', canvasRef.current.height);
       console.log('Image rect:', imgRect.width, 'x', imgRect.height);
-      console.log('Line art pos:', lineArtLeft, lineArtTop);
-      console.log('Line art size:', lineArtWidth, 'x', lineArtHeight);
+      console.log('Line art pos:', currentLineArtLeft, currentLineArtTop);
+      console.log('Line art size:', currentLineArtWidth, 'x', currentLineArtHeight);
 
       const response = await fetch('/api/apply-eraser', {
         method: 'POST',
@@ -237,10 +257,10 @@ export default function CompositeStep({
           displayHeight: imgRect.height,
           canvasWidth: 5400,
           canvasHeight: 7200,
-          lineArtTop,
-          lineArtLeft,
-          lineArtWidth,
-          lineArtHeight,
+          lineArtTop: currentLineArtTop,
+          lineArtLeft: currentLineArtLeft,
+          lineArtWidth: currentLineArtWidth,
+          lineArtHeight: currentLineArtHeight,
         }),
       });
 
@@ -250,9 +270,9 @@ export default function CompositeStep({
         throw new Error(data.error || 'Failed to apply eraser');
       }
 
-      // Update with cleaned line art and re-composite
+      // Update with cleaned line art and re-composite (use preview for speed)
       setCleanedLineArt(data.cleanedLineArt);
-      await performComposite(data.cleanedLineArt);
+      await performComposite(data.cleanedLineArt, true);
       
       // Clear the canvas and exit eraser mode
       clearMask();
@@ -266,33 +286,61 @@ export default function CompositeStep({
   };
 
   const handleExportAndDownload = async () => {
-    if (!compositeImage) return;
-
     setIsExporting(true);
     setError('');
 
     try {
-      const response = await fetch('/api/export', {
+      // First, generate a full-resolution composite
+      const config: CompositeConfig = {
+        ...DEFAULT_CONFIG,
+        backgroundColor,
+        lineArtCenterX,
+        lineArtCenterY,
+        lineArtScale,
+      };
+
+      const compositeResponse = await fetch('/api/composite', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          imageData: compositeImage,
+          lineArtImage: cleanedLineArt || lineArtImage,
+          config,
+          title,
+          date,
+          preview: false, // Full resolution for export
+        }),
+      });
+
+      const compositeData = await compositeResponse.json();
+
+      if (!compositeResponse.ok) {
+        throw new Error(compositeData.error || 'Failed to generate full resolution image');
+      }
+
+      // Now export with correct size and bleed
+      const exportResponse = await fetch('/api/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageData: compositeData.imageData,
           size,
           bleed,
         }),
       });
 
-      const data = await response.json();
+      const exportData = await exportResponse.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to export image');
+      if (!exportResponse.ok) {
+        throw new Error(exportData.error || 'Failed to export image');
       }
 
       // Create download link
       const link = document.createElement('a');
-      link.href = data.imageData;
+      link.href = exportData.imageData;
       
       // Use fullOrderNumber as filename, fallback to timestamp
       const filename = fullOrderNumber || `lineart_${Date.now()}`;
@@ -303,7 +351,7 @@ export default function CompositeStep({
       document.body.removeChild(link);
 
       // Call onApprove to signal completion and reset
-      onApprove(compositeImage);
+      onApprove(compositeData.imageData);
     } catch (err: any) {
       console.error('Export error:', err);
       setError(err.message || 'Failed to export image');
@@ -324,7 +372,7 @@ export default function CompositeStep({
           </p>
         </div>
 
-        {isCompositing && (
+        {isCompositing && !compositeImage && (
           <div className="flex flex-col items-center justify-center py-12">
             <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mb-4"></div>
             <p className="text-gray-600 text-lg">Creating your final canvas...</p>
@@ -347,8 +395,8 @@ export default function CompositeStep({
           </div>
         )}
 
-        {compositeImage && !isCompositing && (
-          <div className="space-y-6">
+        {compositeImage && (
+          <div className="space-y-6 relative">
             {/* Eraser Controls */}
             {eraserMode && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -408,9 +456,17 @@ export default function CompositeStep({
                 ref={imageRef}
                 src={compositeImage}
                 alt="Final Composite"
-                className="w-full h-auto block"
+                className={`w-full h-auto block transition-opacity duration-200 ${isCompositing ? 'opacity-50' : 'opacity-100'}`}
                 style={{ imageRendering: 'auto' }}
               />
+              {isCompositing && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="bg-white/80 rounded-lg px-4 py-2 flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-600 border-t-transparent"></div>
+                    <span className="text-sm text-gray-700">Updating...</span>
+                  </div>
+                </div>
+              )}
               {eraserMode && (
                 <canvas
                   ref={canvasRef}
@@ -456,6 +512,83 @@ export default function CompositeStep({
                 </div>
               </div>
             </div>
+
+            {/* Position Controls */}
+            {!eraserMode && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-gray-800">Line Art Position & Scale</h3>
+                  <button
+                    onClick={() => setShowPositionControls(!showPositionControls)}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    {showPositionControls ? 'Hide Controls' : 'Adjust Position'}
+                  </button>
+                </div>
+                
+                {showPositionControls && (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm text-gray-700 font-medium block mb-1">
+                        Horizontal Position (X): {lineArtCenterX}px
+                      </label>
+                      <input
+                        type="range"
+                        min="1000"
+                        max="4400"
+                        value={lineArtCenterX}
+                        onChange={(e) => setLineArtCenterX(parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-700 font-medium block mb-1">
+                        Vertical Position (Y): {lineArtCenterY}px
+                      </label>
+                      <input
+                        type="range"
+                        min="1000"
+                        max="6000"
+                        value={lineArtCenterY}
+                        onChange={(e) => setLineArtCenterY(parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-700 font-medium block mb-1">
+                        Scale: {lineArtScale}px (height)
+                      </label>
+                      <input
+                        type="range"
+                        min="3000"
+                        max="9000"
+                        step="100"
+                        value={lineArtScale}
+                        onChange={(e) => setLineArtScale(parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setLineArtCenterX(DEFAULT_CONFIG.lineArtCenterX);
+                          setLineArtCenterY(DEFAULT_CONFIG.lineArtCenterY);
+                          setLineArtScale(DEFAULT_CONFIG.lineArtScale);
+                        }}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm"
+                      >
+                        Reset to Default
+                      </button>
+                      {isCompositing && (
+                        <span className="px-4 py-2 text-sm text-blue-600">
+                          Updating preview...
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Action Buttons */}
             {!eraserMode && (
