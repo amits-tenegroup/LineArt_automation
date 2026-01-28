@@ -9,6 +9,7 @@ export interface ParsedOrder {
   size: ImageSize;
   bleed: BleedType;
   title: string;
+  date: string;
 }
 
 /**

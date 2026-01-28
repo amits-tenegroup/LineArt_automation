@@ -57,11 +57,17 @@ export function extractSizeFromDescription(description: string): ImageSize | nul
 }
 
 /**
- * Extract title from item description
- * Looks for "Title:" pattern
+ * Extract names from item description
+ * Looks for "Names:" pattern
  */
-export function extractTitleFromDescription(description: string): string {
-  // Look for Title: pattern
+export function extractNamesFromDescription(description: string): string {
+  // Look for Names: pattern
+  const namesMatch = description.match(/Names:\s*([^\n]*?)(?:\s*Date:|$)/i);
+  if (namesMatch) {
+    return namesMatch[1].trim();
+  }
+
+  // Fallback: Look for Title: pattern
   const titleMatch = description.match(/Title:\s*([^]*?)(?:Art color:|Frame color:|Size:|$)/i);
   if (titleMatch) {
     return titleMatch[1].trim();
@@ -76,6 +82,20 @@ export function extractTitleFromDescription(description: string): string {
     if (firstLineMatch) parts.push(firstLineMatch[1].trim());
     if (secondLineMatch) parts.push(secondLineMatch[1].trim());
     return parts.join(" - ");
+  }
+
+  return "";
+}
+
+/**
+ * Extract date from item description
+ * Looks for "Date:" pattern
+ */
+export function extractDateFromDescription(description: string): string {
+  // Look for Date: pattern
+  const dateMatch = description.match(/Date:\s*([^\n]*?)(?:\s*Color:|$)/i);
+  if (dateMatch) {
+    return dateMatch[1].trim();
   }
 
   return "";
@@ -104,8 +124,8 @@ export function extractImageUrlFromDescription(description: string): string | nu
  * Pattern: 100-35-11194-XX where XX is 62/63/64/69
  */
 export function isLineArtSKU(sku: string): boolean {
-  // Accept SKU patterns like 100-35-XXXXX-62/63/64/69
-  const pattern = /^100-35-\d+-(?:62|63|64|69)$/;
+  // Exact pattern: 100-35-11194-62/63/64/69
+  const pattern = /^100-35-11194-(?:62|63|64|69)$/;
   return pattern.test(sku);
 }
 
@@ -119,21 +139,19 @@ export function parseLineArtOrder(row: Record<string, string>): {
   size: ImageSize;
   bleed: BleedType;
   title: string;
+  date: string;
 } | null {
   const sku = row["SKU"] || "";
   
-  // Check if it's a valid LineArt SKU (relaxed check for now)
-  const skuParts = sku.split("-");
-  if (skuParts.length < 4) return null;
-  
-  const suffix = skuParts[skuParts.length - 1];
-  if (!["62", "63", "64", "69"].includes(suffix)) return null;
+  // Check if it's a valid LineArt SKU - exact match required
+  if (!isLineArtSKU(sku)) return null;
 
   const description = row["Item description"] || "";
   const imageUrl = extractImageUrlFromDescription(description) || row["Image URL"] || "";
   const size = extractSizeFromDescription(description) || "18x24";
   const bleed = decodeBleedFromSKU(sku);
-  const title = extractTitleFromDescription(description);
+  const title = extractNamesFromDescription(description);
+  const date = extractDateFromDescription(description);
 
   return {
     orderId: row["Order ID"] || "",
@@ -142,5 +160,6 @@ export function parseLineArtOrder(row: Record<string, string>): {
     size,
     bleed,
     title,
+    date,
   };
 }

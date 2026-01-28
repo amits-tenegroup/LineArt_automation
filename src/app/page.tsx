@@ -6,6 +6,9 @@ import {
   CSVUploader,
   ManualInputForm,
   ProgressIndicator,
+  AITransformStep,
+  AutoTransformStep,
+  CompositeStep,
 } from "@/components";
 import {
   OrderData,
@@ -21,6 +24,36 @@ export default function Home() {
   const [inputMode, setInputMode] = useState<InputMode>("manual");
   const [orderData, setOrderData] = useState<OrderData>(INITIAL_ORDER_DATA);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [firstTransformImage, setFirstTransformImage] = useState<string>("");
+  const [secondTransformImage, setSecondTransformImage] = useState<string>("");
+  const [finalCompositeImage, setFinalCompositeImage] = useState<string>("");
+
+  // TEST MODE: Skip directly to step 4 with test image
+  const skipToStep4Test = async () => {
+    try {
+      // Read the test image file
+      const response = await fetch('/download (8).png');
+      const blob = await response.blob();
+      const reader = new FileReader();
+      
+      reader.onloadend = () => {
+        const base64data = reader.result as string;
+        setSecondTransformImage(base64data);
+        setOrderData({
+          ...INITIAL_ORDER_DATA,
+          title: 'Test & Title',
+          date: '01.01.00',
+          backgroundColor: 'beige',
+        });
+        setCurrentStep(4);
+      };
+      
+      reader.readAsDataURL(blob);
+    } catch (error) {
+      console.error('Failed to load test image:', error);
+      alert('Please copy your test image to public folder as "download (8).png"');
+    }
+  };
 
   // Handle image selection
   const handleImageSelect = useCallback((file: File, previewUrl: string) => {
@@ -46,26 +79,58 @@ export default function Home() {
       size: order.size,
       bleed: order.bleed,
       mainTitle: order.title,
+      date: order.date,
       // Keep existing values for fields not in CSV
-      date: prev.date,
       backgroundColor: prev.backgroundColor,
     }));
   }, []);
 
   // Check if we can proceed to next step
-  const canProceed =
-    (orderData.imageFile || orderData.imageUrl) &&
-    orderData.mainTitle.trim() !== "";
+  const canProceed = orderData.imageFile || orderData.imageUrl;
 
   // Handle start processing
   const handleStartProcess = useCallback(async () => {
     if (!canProceed) return;
 
     setIsProcessing(true);
-    // TODO: Implement Step 2 - First AI transformation
     console.log("Starting process with data:", orderData);
 
-    // For now, just move to step 2 placeholder
+    // Convert image to base64 if needed
+    let imageDataUrl = orderData.imagePreviewUrl;
+    
+    if (orderData.imageUrl && !orderData.imageFile) {
+      // Fetch the image from URL via our proxy API to avoid CORS issues
+      try {
+        const response = await fetch('/api/fetch-image', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ imageUrl: orderData.imageUrl }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to fetch image');
+        }
+
+        imageDataUrl = data.imageData;
+      } catch (error) {
+        console.error("Failed to fetch image from URL:", error);
+        alert(`Failed to fetch image from URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        setIsProcessing(false);
+        return;
+      }
+    }
+
+    // Update order data with the image data URL
+    setOrderData((prev) => ({
+      ...prev,
+      imagePreviewUrl: imageDataUrl,
+    }));
+
+    // Move to step 2
     setCurrentStep(2);
     setIsProcessing(false);
   }, [canProceed, orderData]);
@@ -73,8 +138,38 @@ export default function Home() {
   // Reset to start
   const handleReset = useCallback(() => {
     setOrderData(INITIAL_ORDER_DATA);
+    setFirstTransformImage("");
+    setSecondTransformImage("");
+    setFinalCompositeImage("");
     setCurrentStep(1);
   }, []);
+
+  // Handle first transformation approval
+  const handleFirstTransformApprove = useCallback((transformedImage: string) => {
+    setFirstTransformImage(transformedImage);
+    setCurrentStep(3);
+  }, []);
+
+  // Handle second transformation completion (auto-proceeds to Step 4)
+  const handleSecondTransformComplete = useCallback((transformedImage: string) => {
+    setSecondTransformImage(transformedImage);
+    setCurrentStep(4);
+  }, []);
+
+  // Handle composite approval (proceeds to Step 5)
+  const handleCompositeApprove = useCallback((finalImage: string) => {
+    setFinalCompositeImage(finalImage);
+    setCurrentStep(5);
+  }, []);
+
+  // Handle back from step 2
+  const handleBackToStep1 = useCallback(() => {
+    setCurrentStep(1);
+  }, []);
+
+  // AI Prompts
+  const FIRST_TRANSFORM_PROMPT = "Continuous line art drawing, one single fluid beautiful line, abstract very minimalist art, blind contour sketch, aesthetic, imperfect curves, chaotic but artistic, high contrast black on white. Very abstract. IGNORE the background";
+  const SECOND_TRANSFORM_PROMPT = "make some lines thicker";
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -156,6 +251,19 @@ export default function Home() {
                   Order Summary
                 </h3>
 
+                {/* TEST MODE BUTTON */}
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <button
+                    onClick={skipToStep4Test}
+                    className="w-full py-2 px-4 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 font-medium text-sm"
+                  >
+                    🧪 TEST: Skip to Step 4 (Eraser Test)
+                  </button>
+                  <p className="text-xs text-yellow-700 mt-2">
+                    Copy test image to public/download (8).png first
+                  </p>
+                </div>
+
                 <div className="space-y-2 text-sm mb-6">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Size:</span>
@@ -195,11 +303,6 @@ export default function Home() {
                 {!orderData.imageFile && !orderData.imageUrl && (
                   <p className="text-amber-600 text-sm mb-4">
                     Please upload an image or provide an image URL
-                  </p>
-                )}
-                {!orderData.mainTitle && (
-                  <p className="text-amber-600 text-sm mb-4">
-                    Please enter the main title (names)
                   </p>
                 )}
 
@@ -249,14 +352,46 @@ export default function Home() {
           </div>
         )}
 
-        {/* Placeholder for Steps 2-5 */}
-        {currentStep > 1 && (
+        {/* Step 2: First AI Transformation */}
+        {currentStep === 2 && orderData.imagePreviewUrl && (
+          <AITransformStep
+            sourceImage={orderData.imagePreviewUrl}
+            stepNumber={1}
+            prompt={FIRST_TRANSFORM_PROMPT}
+            onApprove={handleFirstTransformApprove}
+            onBack={handleBackToStep1}
+          />
+        )}
+
+        {/* Step 3: Second AI Pass (Automatic Refinement) */}
+        {currentStep === 3 && firstTransformImage && (
+          <AutoTransformStep
+            sourceImage={firstTransformImage}
+            prompt={SECOND_TRANSFORM_PROMPT}
+            onComplete={handleSecondTransformComplete}
+          />
+        )}
+
+        {/* Step 4: Composite Final Image */}
+        {currentStep === 4 && secondTransformImage && (
+          <CompositeStep
+            lineArtImage={secondTransformImage}
+            title={orderData.mainTitle}
+            date={orderData.date}
+            backgroundColor={orderData.backgroundColor}
+            onApprove={handleCompositeApprove}
+            onRedo={handleReset}
+          />
+        )}
+
+        {/* Placeholder for Step 5 */}
+        {currentStep === 5 && (
           <div className="bg-white rounded-xl shadow-sm p-8 text-center">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              Step {currentStep} - Coming Soon
+              Step 5: Download - Coming Soon
             </h2>
             <p className="text-gray-600 mb-6">
-              This step will be implemented next.
+              Export with correct resolution and bleed will be implemented next.
             </p>
             <button onClick={handleReset} className="btn-secondary">
               Back to Start
