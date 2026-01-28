@@ -134,6 +134,7 @@ export function isLineArtSKU(sku: string): boolean {
  */
 export function parseLineArtOrder(row: Record<string, string>): {
   orderId: string;
+  fullOrderNumber: string;
   sku: string;
   imageUrl: string;
   size: ImageSize;
@@ -153,8 +154,13 @@ export function parseLineArtOrder(row: Record<string, string>): {
   const title = extractNamesFromDescription(description);
   const date = extractDateFromDescription(description);
 
+  const orderId = row["Order ID"] || "";
+  const itemId = row["Id"] || "";
+  const fullOrderNumber = itemId ? `${orderId}_${itemId}` : orderId;
+
   return {
-    orderId: row["Order ID"] || "",
+    orderId,
+    fullOrderNumber,
     sku,
     imageUrl,
     size,

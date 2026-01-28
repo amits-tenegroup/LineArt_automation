@@ -41,7 +41,7 @@ export default function Home() {
         setSecondTransformImage(base64data);
         setOrderData({
           ...INITIAL_ORDER_DATA,
-          title: 'Test & Title',
+          mainTitle: 'Test & Title',
           date: '01.01.00',
           backgroundColor: 'beige',
         });
@@ -74,6 +74,7 @@ export default function Home() {
     setOrderData((prev) => ({
       ...prev,
       orderId: order.orderId,
+      fullOrderNumber: order.fullOrderNumber,
       sku: order.sku,
       imageUrl: order.imageUrl,
       size: order.size,
@@ -156,10 +157,15 @@ export default function Home() {
     setCurrentStep(4);
   }, []);
 
-  // Handle composite approval (proceeds to Step 5)
+  // Handle composite approval - after download, go to success screen then reset
   const handleCompositeApprove = useCallback((finalImage: string) => {
     setFinalCompositeImage(finalImage);
-    setCurrentStep(5);
+    setCurrentStep(5); // Show success message briefly
+    
+    // Auto-reset to step 1 after 3 seconds
+    setTimeout(() => {
+      handleReset();
+    }, 3000);
   }, []);
 
   // Handle back from step 2
@@ -372,29 +378,43 @@ export default function Home() {
           />
         )}
 
-        {/* Step 4: Composite Final Image */}
+        {/* Step 4: Final Composite & Export */}
         {currentStep === 4 && secondTransformImage && (
           <CompositeStep
             lineArtImage={secondTransformImage}
             title={orderData.mainTitle}
             date={orderData.date}
             backgroundColor={orderData.backgroundColor}
+            size={orderData.size}
+            bleed={orderData.bleed}
+            fullOrderNumber={orderData.fullOrderNumber}
             onApprove={handleCompositeApprove}
             onRedo={handleReset}
           />
         )}
 
-        {/* Placeholder for Step 5 */}
+        {/* Step 5: Success message after download */}
         {currentStep === 5 && (
           <div className="bg-white rounded-xl shadow-sm p-8 text-center">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">
-              Step 5: Download - Coming Soon
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-semibold text-green-600 mb-2">
+              Download Complete!
             </h2>
-            <p className="text-gray-600 mb-6">
-              Export with correct resolution and bleed will be implemented next.
+            <p className="text-gray-600 mb-2">
+              Your LineArt canvas has been exported as JPG.
             </p>
-            <button onClick={handleReset} className="btn-secondary">
-              Back to Start
+            <p className="text-sm text-gray-500 mb-6">
+              Size: {orderData.size} | Bleed: {orderData.bleed}
+            </p>
+            <p className="text-sm text-gray-400 mb-4">
+              Returning to start in a few seconds...
+            </p>
+            <button onClick={handleReset} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              Start New Order
             </button>
           </div>
         )}

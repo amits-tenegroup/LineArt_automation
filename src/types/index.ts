@@ -43,6 +43,7 @@ export const BLEED_PIXELS: Record<BleedType, number> = {
 // Order data from CSV or manual input
 export interface OrderData {
   orderId?: string;
+  fullOrderNumber?: string; // Format: OrderID_Id (e.g., "350406249_481088")
   sku?: string;
   imageUrl?: string;
   imageFile?: File | null;

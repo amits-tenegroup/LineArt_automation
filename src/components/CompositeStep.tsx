@@ -1,12 +1,16 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { ImageSize, BleedType } from '@/types';
 
 interface CompositeStepProps {
   lineArtImage: string;
   title: string;
   date: string;
   backgroundColor: 'beige' | 'blue' | 'pink';
+  size: ImageSize;
+  bleed: BleedType;
+  fullOrderNumber?: string;
   onApprove: (finalImage: string) => void;
   onRedo: () => void;
 }
@@ -46,6 +50,9 @@ export default function CompositeStep({
   title,
   date,
   backgroundColor,
+  size,
+  bleed,
+  fullOrderNumber,
   onApprove,
   onRedo,
 }: CompositeStepProps) {
@@ -56,6 +63,7 @@ export default function CompositeStep({
   const [brushSize, setBrushSize] = useState(30);
   const [isApplyingEraser, setIsApplyingEraser] = useState(false);
   const [cleanedLineArt, setCleanedLineArt] = useState<string>('');
+  const [isExporting, setIsExporting] = useState(false);
   
   const hasComposited = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -257,6 +265,53 @@ export default function CompositeStep({
     }
   };
 
+  const handleExportAndDownload = async () => {
+    if (!compositeImage) return;
+
+    setIsExporting(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageData: compositeImage,
+          size,
+          bleed,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to export image');
+      }
+
+      // Create download link
+      const link = document.createElement('a');
+      link.href = data.imageData;
+      
+      // Use fullOrderNumber as filename, fallback to timestamp
+      const filename = fullOrderNumber || `lineart_${Date.now()}`;
+      link.download = `${filename}.jpg`;
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Call onApprove to signal completion and reset
+      onApprove(compositeImage);
+    } catch (err: any) {
+      console.error('Export error:', err);
+      setError(err.message || 'Failed to export image');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto">
       <div className="bg-white rounded-xl shadow-sm p-8">
@@ -389,10 +444,15 @@ export default function CompositeStep({
                   />
                 </svg>
                 <div className="flex-1">
-                  <p className="text-sm text-blue-800 font-medium">Preview Mode</p>
+                  <p className="text-sm text-blue-800 font-medium">Export Settings</p>
                   <p className="text-sm text-blue-600 mt-1">
-                    This is a scaled-down preview. The final downloaded image will be at full 18"×24" 300dpi resolution.
+                    Size: <strong>{size}</strong> @ 300dpi | Bleed: <strong>{bleed}</strong>
                   </p>
+                  {fullOrderNumber && (
+                    <p className="text-sm text-blue-600 mt-1">
+                      Filename: <strong>{fullOrderNumber}.jpg</strong>
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -413,10 +473,11 @@ export default function CompositeStep({
                   Redo Process
                 </button>
                 <button
-                  onClick={() => onApprove(compositeImage)}
-                  className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  onClick={handleExportAndDownload}
+                  disabled={isExporting}
+                  className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50"
                 >
-                  Approve & Continue
+                  {isExporting ? 'Exporting...' : 'Approve & Download'}
                 </button>
               </div>
             )}

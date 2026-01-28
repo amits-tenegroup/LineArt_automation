@@ -4,6 +4,7 @@ import { BleedType, ImageSize } from "@/types";
 
 export interface ParsedOrder {
   orderId: string;
+  fullOrderNumber: string; // Format: OrderID_Id (e.g., "350406249_481088")
   sku: string;
   imageUrl: string;
   size: ImageSize;
