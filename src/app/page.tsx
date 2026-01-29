@@ -16,10 +16,12 @@ import {
   INITIAL_ORDER_DATA,
 } from "@/types";
 import { ParsedOrder } from "@/lib/csvParser";
+import { useAuth } from "@/contexts/AuthContext";
 
 type InputMode = "manual" | "csv";
 
 export default function Home() {
+  const { logout } = useAuth();
   const [currentStep, setCurrentStep] = useState<WorkflowStep>(1);
   const [inputMode, setInputMode] = useState<InputMode>("manual");
   const [orderData, setOrderData] = useState<OrderData>(INITIAL_ORDER_DATA);
@@ -181,13 +183,21 @@ export default function Home() {
     <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">
-            LineArt Automation
-          </h1>
-          <p className="text-sm text-gray-600">
-            Transform couple photos into beautiful line art canvases
-          </p>
+        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              LineArt Automation
+            </h1>
+            <p className="text-sm text-gray-600">
+              Transform couple photos into beautiful line art canvases
+            </p>
+          </div>
+          <button
+            onClick={logout}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Logout
+          </button>
         </div>
       </header>
 
