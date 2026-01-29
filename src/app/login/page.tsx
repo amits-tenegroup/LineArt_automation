@@ -29,6 +29,8 @@ export default function LoginPage() {
       if (response.ok) {
         // Store authentication token
         localStorage.setItem("auth_token", data.token);
+        // Set cookie for middleware
+        document.cookie = `auth_token=${data.token}; path=/; max-age=86400; SameSite=Lax`;
         // Redirect to home page
         router.push("/");
         router.refresh();

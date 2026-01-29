@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
 import sharp from 'sharp';
+import path from 'path';
+import fs from 'fs';
+import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 
 // Size dimensions at 300 DPI
 const SIZE_DIMENSIONS: Record<string, { width: number; height: number }> = {
@@ -23,6 +26,12 @@ const BACKGROUND_COLORS: Record<string, { r: number; g: number; b: number }> = {
   blue: { r: 200, g: 220, b: 240 },
   pink: { r: 255, g: 220, b: 230 },
 };
+
+// Register the font
+const fontPath = path.join(process.cwd(), 'public', 'assets', 'fonts', 'Georgia_pro.ttf');
+if (fs.existsSync(fontPath)) {
+  GlobalFonts.registerFromPath(fontPath, 'Georgia Pro');
+}
 
 export const maxDuration = 60; // Allow 60 seconds for this operation
 
@@ -54,79 +63,144 @@ export async function POST(request: NextRequest) {
     const CANVAS_HEIGHT = 7200;
     const bgColor = BACKGROUND_COLORS[config.backgroundColor] || BACKGROUND_COLORS.beige;
 
+    // Load background image
+    const backgroundPath = path.join(
+      process.cwd(),
+      'public',
+      'assets',
+      'backgrounds',
+      `${config.backgroundColor}.jpg`
+    );
+
+    if (!fs.existsSync(backgroundPath)) {
+      return new Response(
+        JSON.stringify({ error: `Background image not found: ${config.backgroundColor}.jpg` }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Load and resize background
+    const background = await sharp(backgroundPath)
+      .resize(CANVAS_WIDTH, CANVAS_HEIGHT, { fit: 'cover' })
+      .toBuffer();
+
     // Prepare line art
     const lineArtBase64 = lineArtImage.replace(/^data:image\/\w+;base64,/, '');
     const lineArtBuffer = Buffer.from(lineArtBase64, 'base64');
-    const lineArtMetadata = await sharp(lineArtBuffer).metadata();
 
     const lineArtHeight = config.lineArtScale;
     const lineArtWidth = Math.round(lineArtHeight * (3 / 4));
-    const lineArtTop = config.lineArtCenterY - lineArtHeight / 2;
-    const lineArtLeft = config.lineArtCenterX - lineArtWidth / 2;
+    const lineArtTop = Math.round(config.lineArtCenterY - lineArtHeight / 2);
+    const lineArtLeft = Math.round(config.lineArtCenterX - lineArtWidth / 2);
 
     const resizedLineArt = await sharp(lineArtBuffer)
-      .resize(lineArtWidth, lineArtHeight, { fit: 'fill' })
+      .resize(lineArtWidth, lineArtHeight, {
+        fit: 'contain',
+        background: { r: 255, g: 255, b: 255, alpha: 0 },
+      })
       .toBuffer();
 
-    // Create text overlays using SVG
-    const titleSvg = `
-      <svg width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}">
-        <text
-          x="50%"
-          y="${config.titleTop}"
-          text-anchor="middle"
-          font-family="Arial, sans-serif"
-          font-size="${config.titleFontSize}"
-          font-weight="bold"
-          letter-spacing="${config.titleLetterSpacing}"
-          fill="${config.titleColor}"
-        >${title.toUpperCase()}</text>
-      </svg>
-    `;
+    // Calculate visible portion
+    const cropLeft = Math.max(0, -lineArtLeft);
+    const cropTop = Math.max(0, -lineArtTop);
+    const visibleLeft = Math.max(0, lineArtLeft);
+    const visibleTop = Math.max(0, lineArtTop);
+    const visibleWidth = Math.min(lineArtWidth - cropLeft, CANVAS_WIDTH - visibleLeft);
+    const visibleHeight = Math.min(lineArtHeight - cropTop, CANVAS_HEIGHT - visibleTop);
 
-    const dateSvg = `
-      <svg width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}">
-        <text
-          x="50%"
-          y="${config.dateTop}"
-          text-anchor="middle"
-          font-family="Arial, sans-serif"
-          font-size="${config.dateFontSize}"
-          letter-spacing="${config.dateLetterSpacing}"
-          fill="${config.dateColor}"
-        >${date}</text>
-      </svg>
-    `;
+    let processedLineArt: Buffer;
+    if (visibleWidth > 0 && visibleHeight > 0) {
+      const croppedLineArt = await sharp(resizedLineArt)
+        .extract({
+          left: cropLeft,
+          top: cropTop,
+          width: visibleWidth,
+          height: visibleHeight,
+        })
+        .toBuffer();
 
-    const titleBuffer = Buffer.from(titleSvg);
-    const dateBuffer = Buffer.from(dateSvg);
+      processedLineArt = await sharp({
+        create: {
+          width: CANVAS_WIDTH,
+          height: CANVAS_HEIGHT,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 0 },
+        },
+      })
+        .composite([
+          {
+            input: croppedLineArt,
+            top: visibleTop,
+            left: visibleLeft,
+            blend: 'over',
+          },
+        ])
+        .png()
+        .toBuffer();
+    } else {
+      processedLineArt = await sharp({
+        create: {
+          width: CANVAS_WIDTH,
+          height: CANVAS_HEIGHT,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 0 },
+        },
+      })
+        .png()
+        .toBuffer();
+    }
 
-    // Composite everything
-    let compositeImage = await sharp({
-      create: {
-        width: CANVAS_WIDTH,
-        height: CANVAS_HEIGHT,
-        channels: 3,
-        background: bgColor,
+    // Create text overlay using canvas
+    let textOverlay: Buffer | null = null;
+    
+    if (title || date) {
+      const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
+      const ctx = canvas.getContext('2d');
+
+      ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = config.titleColor;
+
+      if (title) {
+        const titleUpper = title.toUpperCase();
+        ctx.font = `bold ${config.titleFontSize}px "Georgia Pro"`;
+        ctx.letterSpacing = `${config.titleLetterSpacing}px`;
+        ctx.fillText(titleUpper, CANVAS_WIDTH / 2, config.titleTop);
+      }
+
+      if (date) {
+        ctx.font = `${config.dateFontSize}px "Georgia Pro"`;
+        ctx.letterSpacing = `${config.dateLetterSpacing}px`;
+        ctx.fillText(date, CANVAS_WIDTH / 2, config.dateTop);
+      }
+
+      textOverlay = canvas.toBuffer('image/png');
+    }
+
+    // Composite all layers
+    const compositeOperations: any[] = [
+      {
+        input: processedLineArt,
+        top: 0,
+        left: 0,
+        blend: 'multiply',
       },
-    })
-      .composite([
-        {
-          input: resizedLineArt,
-          top: Math.round(lineArtTop),
-          left: Math.round(lineArtLeft),
-        },
-        {
-          input: titleBuffer,
-          top: 0,
-          left: 0,
-        },
-        {
-          input: dateBuffer,
-          top: 0,
-          left: 0,
-        },
-      ])
+    ];
+
+    if (textOverlay) {
+      compositeOperations.push({
+        input: textOverlay,
+        top: 0,
+        left: 0,
+        blend: 'over',
+      });
+    }
+
+    let compositeImage = await sharp(background)
+      .composite(compositeOperations)
       .toBuffer();
 
     // Step 2: Resize to target size based on canvas size parameter
@@ -160,10 +234,18 @@ export async function POST(request: NextRequest) {
             left: bleedPx,
           },
         ])
+        .withMetadata({
+          density: 300,
+        })
         .jpeg({ quality: 95 })
         .toBuffer();
     } else {
-      finalImage = await sharp(finalImage).jpeg({ quality: 95 }).toBuffer();
+      finalImage = await sharp(finalImage)
+        .withMetadata({
+          density: 300,
+        })
+        .jpeg({ quality: 95 })
+        .toBuffer();
     }
 
     // Return as downloadable file

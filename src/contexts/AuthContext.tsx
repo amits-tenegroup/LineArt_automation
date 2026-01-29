@@ -22,6 +22,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
+    // Don't run auth checks on login page
+    if (pathname === "/login") {
+      setIsLoading(false);
+      return;
+    }
+
     // Check authentication status
     const checkAuth = async () => {
       const token = localStorage.getItem("auth_token");
@@ -29,9 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!token) {
         setIsAuthenticated(false);
         setIsLoading(false);
-        if (pathname !== "/login") {
-          router.push("/login");
-        }
+        router.push("/login");
         return;
       }
 
@@ -51,22 +55,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Set cookie for middleware
           document.cookie = `auth_token=${token}; path=/; max-age=86400; SameSite=Lax`;
           
-          if (!data.valid && pathname !== "/login") {
+          if (!data.valid) {
             router.push("/login");
           }
         } else {
           setIsAuthenticated(false);
           localStorage.removeItem("auth_token");
-          if (pathname !== "/login") {
-            router.push("/login");
-          }
+          router.push("/login");
         }
       } catch (error) {
         console.error("Auth check error:", error);
         setIsAuthenticated(false);
-        if (pathname !== "/login") {
-          router.push("/login");
-        }
+        router.push("/login");
       } finally {
         setIsLoading(false);
       }
