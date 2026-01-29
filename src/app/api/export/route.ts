@@ -17,9 +17,11 @@ const BLEED_SIZES: Record<string, number> = {
   '20px': 20,
 };
 
+export const maxDuration = 60; // Allow 60 seconds for export (vercel serverless function timeout)
+
 export async function POST(request: NextRequest) {
   try {
-    const { imageData, size, bleed } = await request.json();
+    const { imageData, size, bleed, streamResponse } = await request.json();
 
     if (!imageData) {
       return NextResponse.json(
@@ -79,6 +81,19 @@ export async function POST(request: NextRequest) {
         .toBuffer();
     }
 
+    // If client requested streaming/direct download, return as blob
+    if (streamResponse) {
+      return new Response(new Uint8Array(processedImage), {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Content-Disposition': `attachment; filename="lineart_${Date.now()}.jpg"`,
+          'Content-Length': processedImage.length.toString(),
+        },
+      });
+    }
+
+    // Otherwise convert to base64 for JSON response (smaller previews only)
     const finalBase64 = processedImage.toString('base64');
 
     return NextResponse.json({

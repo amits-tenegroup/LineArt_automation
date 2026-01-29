@@ -290,7 +290,7 @@ export default function CompositeStep({
     setError('');
 
     try {
-      // First, generate a full-resolution composite
+      // Generate full-resolution export directly (no intermediate composite needed)
       const config: CompositeConfig = {
         ...DEFAULT_CONFIG,
         backgroundColor,
@@ -299,7 +299,7 @@ export default function CompositeStep({
         lineArtScale,
       };
 
-      const compositeResponse = await fetch('/api/composite', {
+      const exportResponse = await fetch('/api/export-full', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -309,38 +309,23 @@ export default function CompositeStep({
           config,
           title,
           date,
-          preview: false, // Full resolution for export
-        }),
-      });
-
-      const compositeData = await compositeResponse.json();
-
-      if (!compositeResponse.ok) {
-        throw new Error(compositeData.error || 'Failed to generate full resolution image');
-      }
-
-      // Now export with correct size and bleed
-      const exportResponse = await fetch('/api/export', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageData: compositeData.imageData,
           size,
           bleed,
+          fullOrderNumber,
         }),
       });
 
-      const exportData = await exportResponse.json();
-
       if (!exportResponse.ok) {
-        throw new Error(exportData.error || 'Failed to export image');
+        const errorData = await exportResponse.json();
+        throw new Error(errorData.error || 'Failed to export image');
       }
 
-      // Create download link
+      // Get the blob and create download link
+      const blob = await exportResponse.blob();
+      const url = URL.createObjectURL(blob);
+      
       const link = document.createElement('a');
-      link.href = exportData.imageData;
+      link.href = url;
       
       // Use fullOrderNumber as filename, fallback to timestamp
       const filename = fullOrderNumber || `lineart_${Date.now()}`;
@@ -349,9 +334,12 @@ export default function CompositeStep({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      
+      // Clean up the blob URL
+      URL.revokeObjectURL(url);
 
       // Call onApprove to signal completion and reset
-      onApprove(compositeData.imageData);
+      onApprove(compositeImage); // Use the preview image for the success message
     } catch (err: any) {
       console.error('Export error:', err);
       setError(err.message || 'Failed to export image');
