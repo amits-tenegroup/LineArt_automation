@@ -40,19 +40,31 @@ export const AutoTransformStep: React.FC<AutoTransformStepProps> = ({
 
       setProgress('Processing response...');
 
-      const data = await response.json();
+      const text = await response.text();
+      let data: { error?: string; imageData?: string };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        if (response.status === 413) {
+          setError('Image is too large. Please use a smaller image or try the URL option.');
+        } else {
+          setError(text || 'An error occurred during transformation');
+        }
+        setIsLoading(false);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to transform image');
       }
 
       setProgress('Transformation complete!');
-      setTransformedImage(data.imageData);
+      setTransformedImage(data.imageData || '');
       setIsLoading(false);
 
       // Auto-proceed after a brief moment to show the result
       setTimeout(() => {
-        onComplete(data.imageData);
+        onComplete(data.imageData || '');
       }, 1500);
     } catch (err: any) {
       setError(err.message || 'An error occurred during transformation');

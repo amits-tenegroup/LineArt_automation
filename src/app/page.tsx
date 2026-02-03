@@ -16,6 +16,7 @@ import {
   INITIAL_ORDER_DATA,
 } from "@/types";
 import { ParsedOrder } from "@/lib/csvParser";
+import { resizeImageFile } from "@/lib/resizeImage";
 import { useAuth } from "@/contexts/AuthContext";
 
 type InputMode = "manual" | "csv";
@@ -101,7 +102,17 @@ export default function Home() {
     // Convert image to base64 if needed
     let imageDataUrl = orderData.imagePreviewUrl;
     
-    if (orderData.imageUrl && !orderData.imageFile) {
+    if (orderData.imageFile) {
+      // Resize and convert to base64 (keeps payload under Vercel 4.5 MB limit)
+      try {
+        imageDataUrl = await resizeImageFile(orderData.imageFile);
+      } catch (error) {
+        console.error("Failed to read image file:", error);
+        alert(`Failed to read image file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        setIsProcessing(false);
+        return;
+      }
+    } else if (orderData.imageUrl && !orderData.imageFile) {
       // Fetch the image from URL via our proxy API to avoid CORS issues
       try {
         const response = await fetch('/api/fetch-image', {

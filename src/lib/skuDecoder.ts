@@ -23,8 +23,11 @@ export function extractSizeFromDescription(description: string): ImageSize | nul
   // Common size patterns in the description
   const sizePatterns: { pattern: RegExp; size: ImageSize }[] = [
     { pattern: /30[""]?\s*[x×]\s*40[""]?/i, size: "30x40" },
+    { pattern: /24[""]?\s*[x×]\s*36[""]?/i, size: "24x36" },
     { pattern: /24[""]?\s*[x×]\s*32[""]?/i, size: "24x32" },
+    { pattern: /20[""]?\s*[x×]\s*30[""]?/i, size: "20x30" },
     { pattern: /18[""]?\s*[x×]\s*24[""]?/i, size: "18x24" },
+    { pattern: /16[""]?\s*[x×]\s*24[""]?/i, size: "16x24" },
     { pattern: /12[""]?\s*[x×]\s*16[""]?/i, size: "12x16" },
     { pattern: /9[""]?\s*[x×]\s*12[""]?/i, size: "9x12" },
     { pattern: /8[""]?\s*[x×]\s*10[""]?/i, size: "9x12" }, // Map 8x10 to 9x12

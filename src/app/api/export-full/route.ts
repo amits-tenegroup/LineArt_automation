@@ -3,12 +3,16 @@ import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
+import { getCanvasDimensions, ImageSize } from '@/types';
 
 // Size dimensions at 300 DPI
 const SIZE_DIMENSIONS: Record<string, { width: number; height: number }> = {
   '30x40': { width: 9000, height: 12000 },
+  '24x36': { width: 7200, height: 10800 },
   '24x32': { width: 7200, height: 9600 },
+  '20x30': { width: 6000, height: 9000 },
   '18x24': { width: 5400, height: 7200 },
+  '16x24': { width: 4800, height: 7200 },
   '12x16': { width: 3600, height: 4800 },
   '9x12': { width: 2700, height: 3600 },
 };
@@ -54,13 +58,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const imageSize = (size || '18x24') as ImageSize;
+    
     console.log('=== FULL EXPORT API ===');
     console.log('Size:', size);
     console.log('Bleed:', bleed);
 
-    // Step 1: Generate full-resolution composite (5400x7200)
-    const CANVAS_WIDTH = 5400;
-    const CANVAS_HEIGHT = 7200;
+    // Step 1: Get canvas dimensions based on size's aspect ratio
+    const { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, aspectRatio } = getCanvasDimensions(imageSize);
+    
+    console.log('Canvas dimensions:', CANVAS_WIDTH, 'x', CANVAS_HEIGHT, 'Aspect:', aspectRatio);
+    
     const bgColor = BACKGROUND_COLORS[config.backgroundColor] || BACKGROUND_COLORS.beige;
 
     // Load background image
@@ -83,8 +91,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Load and resize background
+    // For 2:3 aspect ratio (SKU -64, -69), stretch to fit without cropping
+    // For 3:4 aspect ratio, use cover to maintain aspect ratio
     const background = await sharp(backgroundPath)
-      .resize(CANVAS_WIDTH, CANVAS_HEIGHT, { fit: 'cover' })
+      .resize(CANVAS_WIDTH, CANVAS_HEIGHT, { 
+        fit: aspectRatio === '2:3' ? 'fill' : 'cover' 
+      })
       .toBuffer();
 
     // Prepare line art

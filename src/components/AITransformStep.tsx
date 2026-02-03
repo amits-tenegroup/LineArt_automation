@@ -40,13 +40,24 @@ export const AITransformStep: React.FC<AITransformStepProps> = ({
         }),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data: { error?: string; imageData?: string };
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        if (response.status === 413) {
+          setError('Image is too large. Please use a smaller image or try the URL option.');
+        } else {
+          setError(text || 'An error occurred during transformation');
+        }
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to transform image');
       }
 
-      setTransformedImage(data.imageData);
+      setTransformedImage(data.imageData || '');
     } catch (err: any) {
       setError(err.message || 'An error occurred during transformation');
       console.error('Transform error:', err);

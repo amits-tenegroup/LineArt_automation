@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ImageSize, BleedType } from '@/types';
+import { ImageSize, BleedType, getCanvasDimensions } from '@/types';
 
 interface CompositeStepProps {
   lineArtImage: string;
@@ -30,19 +30,38 @@ interface CompositeConfig {
   backgroundColor: 'beige' | 'blue' | 'pink';
 }
 
-const DEFAULT_CONFIG: CompositeConfig = {
-  lineArtCenterX: 2700,
-  lineArtCenterY: 3200,
-  lineArtScale: 7200,
-  titleFontSize: 145,
-  titleTop: 6710,
-  titleColor: '#000000',
-  titleLetterSpacing: 40,
-  dateFontSize: 95,
-  dateTop: 6900,
-  dateColor: '#000000',
-  dateLetterSpacing: 20,
-  backgroundColor: 'beige',
+// Calculate default config based on canvas aspect ratio
+const getDefaultConfig = (size: ImageSize): CompositeConfig => {
+  const { width: canvasWidth, height: canvasHeight } = getCanvasDimensions(size);
+  
+  // Calculate positions relative to canvas dimensions
+  // Line art centered horizontally, slightly above center vertically
+  const lineArtCenterX = canvasWidth / 2;
+  const lineArtCenterY = canvasHeight * 0.44; // 44% from top
+  const lineArtScale = canvasHeight; // Full height by default
+  
+  // Text at bottom (93% from top for title, 96% for date)
+  const titleTop = canvasHeight * 0.93;
+  const dateTop = canvasHeight * 0.96;
+  
+  // Font sizes relative to canvas height
+  const titleFontSize = Math.round(canvasHeight * 0.02); // 2% of height
+  const dateFontSize = Math.round(canvasHeight * 0.013); // 1.3% of height
+  
+  return {
+    lineArtCenterX,
+    lineArtCenterY,
+    lineArtScale,
+    titleFontSize,
+    titleTop,
+    titleColor: '#000000',
+    titleLetterSpacing: 40,
+    dateFontSize,
+    dateTop,
+    dateColor: '#000000',
+    dateLetterSpacing: 20,
+    backgroundColor: 'beige',
+  };
 };
 
 export default function CompositeStep({
@@ -56,6 +75,9 @@ export default function CompositeStep({
   onApprove,
   onRedo,
 }: CompositeStepProps) {
+  // Get default config for the current size
+  const defaultConfig = getDefaultConfig(size);
+  
   const [compositeImage, setCompositeImage] = useState<string>('');
   const [isCompositing, setIsCompositing] = useState(false);
   const [error, setError] = useState<string>('');
@@ -66,9 +88,9 @@ export default function CompositeStep({
   const [isExporting, setIsExporting] = useState(false);
   
   // Line art position and scale controls
-  const [lineArtCenterX, setLineArtCenterX] = useState(DEFAULT_CONFIG.lineArtCenterX);
-  const [lineArtCenterY, setLineArtCenterY] = useState(DEFAULT_CONFIG.lineArtCenterY);
-  const [lineArtScale, setLineArtScale] = useState(DEFAULT_CONFIG.lineArtScale);
+  const [lineArtCenterX, setLineArtCenterX] = useState(defaultConfig.lineArtCenterX);
+  const [lineArtCenterY, setLineArtCenterY] = useState(defaultConfig.lineArtCenterY);
+  const [lineArtScale, setLineArtScale] = useState(defaultConfig.lineArtScale);
   const [showPositionControls, setShowPositionControls] = useState(false);
   
   const hasComposited = useRef(false);
@@ -84,7 +106,7 @@ export default function CompositeStep({
 
     try {
       const config: CompositeConfig = {
-        ...DEFAULT_CONFIG,
+        ...defaultConfig,
         backgroundColor,
         lineArtCenterX,
         lineArtCenterY,
@@ -101,6 +123,7 @@ export default function CompositeStep({
           config,
           title,
           date,
+          size, // Pass size to determine canvas aspect ratio
           preview, // Use lower resolution for preview
         }),
       });
@@ -239,8 +262,13 @@ export default function CompositeStep({
       const currentLineArtTop = lineArtCenterY - (currentLineArtHeight / 2);
       const currentLineArtLeft = lineArtCenterX - (currentLineArtWidth / 2);
       
+      // Get canvas dimensions based on size
+      const { width: canvasWidth, height: canvasHeight } = getCanvasDimensions(size);
+      
       console.log('=== ERASER FRONTEND DEBUG ===');
-      console.log('Canvas size:', canvasRef.current.width, 'x', canvasRef.current.height);
+      console.log('Size:', size);
+      console.log('Canvas size:', canvasWidth, 'x', canvasHeight);
+      console.log('Display canvas size:', canvasRef.current.width, 'x', canvasRef.current.height);
       console.log('Image rect:', imgRect.width, 'x', imgRect.height);
       console.log('Line art pos:', currentLineArtLeft, currentLineArtTop);
       console.log('Line art size:', currentLineArtWidth, 'x', currentLineArtHeight);
@@ -255,8 +283,8 @@ export default function CompositeStep({
           maskImage: maskDataUrl,
           displayWidth: imgRect.width,
           displayHeight: imgRect.height,
-          canvasWidth: 5400,
-          canvasHeight: 7200,
+          canvasWidth,
+          canvasHeight,
           lineArtTop: currentLineArtTop,
           lineArtLeft: currentLineArtLeft,
           lineArtWidth: currentLineArtWidth,
@@ -292,7 +320,7 @@ export default function CompositeStep({
     try {
       // Generate full-resolution export directly (no intermediate composite needed)
       const config: CompositeConfig = {
-        ...DEFAULT_CONFIG,
+        ...defaultConfig,
         backgroundColor,
         lineArtCenterX,
         lineArtCenterY,
@@ -522,8 +550,8 @@ export default function CompositeStep({
                       </label>
                       <input
                         type="range"
-                        min="1000"
-                        max="4400"
+                        min={Math.round(getCanvasDimensions(size).width * 0.2)}
+                        max={Math.round(getCanvasDimensions(size).width * 0.8)}
                         value={lineArtCenterX}
                         onChange={(e) => setLineArtCenterX(parseInt(e.target.value))}
                         className="w-full"
@@ -535,8 +563,8 @@ export default function CompositeStep({
                       </label>
                       <input
                         type="range"
-                        min="1000"
-                        max="6000"
+                        min={Math.round(getCanvasDimensions(size).height * 0.15)}
+                        max={Math.round(getCanvasDimensions(size).height * 0.85)}
                         value={lineArtCenterY}
                         onChange={(e) => setLineArtCenterY(parseInt(e.target.value))}
                         className="w-full"
@@ -548,8 +576,8 @@ export default function CompositeStep({
                       </label>
                       <input
                         type="range"
-                        min="3000"
-                        max="9000"
+                        min={Math.round(getCanvasDimensions(size).height * 0.4)}
+                        max={Math.round(getCanvasDimensions(size).height * 1.3)}
                         step="100"
                         value={lineArtScale}
                         onChange={(e) => setLineArtScale(parseInt(e.target.value))}
@@ -559,9 +587,9 @@ export default function CompositeStep({
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
-                          setLineArtCenterX(DEFAULT_CONFIG.lineArtCenterX);
-                          setLineArtCenterY(DEFAULT_CONFIG.lineArtCenterY);
-                          setLineArtScale(DEFAULT_CONFIG.lineArtScale);
+                          setLineArtCenterX(defaultConfig.lineArtCenterX);
+                          setLineArtCenterY(defaultConfig.lineArtCenterY);
+                          setLineArtScale(defaultConfig.lineArtScale);
                         }}
                         className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm"
                       >

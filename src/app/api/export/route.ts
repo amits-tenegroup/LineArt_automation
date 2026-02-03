@@ -4,8 +4,11 @@ import sharp from 'sharp';
 // Size dimensions at 300 DPI
 const SIZE_DIMENSIONS: Record<string, { width: number; height: number }> = {
   '30x40': { width: 9000, height: 12000 },
+  '24x36': { width: 7200, height: 10800 },
   '24x32': { width: 7200, height: 9600 },
+  '20x30': { width: 6000, height: 9000 },
   '18x24': { width: 5400, height: 7200 },
+  '16x24': { width: 4800, height: 7200 },
   '12x16': { width: 3600, height: 4800 },
   '9x12': { width: 2700, height: 3600 },
 };

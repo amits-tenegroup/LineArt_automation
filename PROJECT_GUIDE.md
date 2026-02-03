@@ -562,7 +562,7 @@ public/download*.png
 ## TypeScript Interfaces
 
 ```typescript
-export type ImageSize = '9x12' | '12x16' | '18x24' | '24x32' | '30x40';
+export type ImageSize = '9x12' | '12x16' | '16x24' | '18x24' | '20x30' | '24x32' | '24x36' | '30x40';
 export type BleedType = 'none' | '20px' | '450px';
 export type BackgroundColor = 'beige' | 'blue' | 'pink';
 

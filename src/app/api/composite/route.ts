@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
+import { getCanvasDimensions, ImageSize } from '@/types';
 
 interface CompositeConfig {
   lineArtCenterX: number;
@@ -28,7 +29,7 @@ if (fs.existsSync(fontPath)) {
 export async function POST(request: NextRequest) {
   console.log('=== COMPOSITE API CALLED ===');
   try {
-    const { lineArtImage, config, title, date, preview } = await request.json();
+    const { lineArtImage, config, title, date, size, preview } = await request.json();
 
     if (!lineArtImage) {
       return NextResponse.json(
@@ -38,13 +39,22 @@ export async function POST(request: NextRequest) {
     }
 
     const typedConfig = config as CompositeConfig;
+    const imageSize = (size || '18x24') as ImageSize;
+
+    // Get canvas dimensions based on the image size's aspect ratio
+    const { width: baseCanvasWidth, height: baseCanvasHeight, aspectRatio } = getCanvasDimensions(imageSize);
+    
+    console.log('Size:', imageSize, 'Aspect Ratio:', aspectRatio);
+    console.log('Base canvas dimensions:', baseCanvasWidth, 'x', baseCanvasHeight);
 
     // Scale factor: 0.5 for preview (2x smaller), 1 for full resolution
     const scale = preview ? 0.5 : 1;
 
-    // Canvas dimensions (18" x 24" at 300 DPI, scaled for preview)
-    const canvasWidth = Math.round(5400 * scale);
-    const canvasHeight = Math.round(7200 * scale);
+    // Canvas dimensions scaled for preview
+    const canvasWidth = Math.round(baseCanvasWidth * scale);
+    const canvasHeight = Math.round(baseCanvasHeight * scale);
+
+    console.log('Actual canvas dimensions (scale:', scale, '):', canvasWidth, 'x', canvasHeight);
 
     // Scale all config values for preview
     const scaledConfig = {
@@ -77,8 +87,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Load and resize background to canvas size
+    // For 2:3 aspect ratio (SKU -64, -69), stretch to fit without cropping
+    // For 3:4 aspect ratio, use cover to maintain aspect ratio
     let background = sharp(backgroundPath).resize(canvasWidth, canvasHeight, {
-      fit: 'cover',
+      fit: aspectRatio === '2:3' ? 'fill' : 'cover',
     });
 
     // Process line art image
